@@ -1,5 +1,269 @@
 ﻿define e = Character("Eileen")
 
+default match_board = None
+default match_selected_cell = None
+default match_message = "Select two adjacent sigils to swap."
+default match_score = 0
+default match_turns = 0
+default match_target_score = 12
+default match_swap_cells = []
+default match_match_cells = []
+default match_pending_resolution = False
+default match_board_locked = False
+
+init python:
+    import random
+
+    class MiniMatchBoard(object):
+        def __init__(self, size=3, tile_types=None):
+            self.size = size
+            self.tile_types = tile_types or ["A", "B", "C", "D", "E"]
+            self._build_board()
+
+        def _build_board(self):
+            attempts = 0
+            while True:
+                self.grid = [[self._random_tile() for _ in range(self.size)] for _ in range(self.size)]
+                if not self.find_matches() or attempts > 25:
+                    break
+                attempts += 1
+
+        def _random_tile(self):
+            return random.choice(self.tile_types)
+
+        def swap_cells(self, a, b):
+            (r1, c1), (r2, c2) = a, b
+            self.grid[r1][c1], self.grid[r2][c2] = self.grid[r2][c2], self.grid[r1][c1]
+
+        def are_adjacent(self, a, b):
+            return abs(a[0] - b[0]) + abs(a[1] - b[1]) == 1
+
+        def find_matches(self):
+            matches = set()
+            size = self.size
+            for row in range(size):
+                row_vals = self.grid[row]
+                if row_vals[0] is not None and len(set(row_vals)) == 1:
+                    matches.update((row, col) for col in range(size))
+
+            for col in range(size):
+                col_vals = [self.grid[row][col] for row in range(size)]
+                if col_vals[0] is not None and len(set(col_vals)) == 1:
+                    matches.update((row, col) for row in range(size))
+
+            return matches
+
+        def resolve_all_matches(self):
+            cleared = 0
+            while True:
+                matches = self.find_matches()
+                if not matches:
+                    break
+
+                for row, col in matches:
+                    self.grid[row][col] = None
+
+                cleared += len(matches)
+                self._collapse_columns()
+
+            return cleared
+
+        def _collapse_columns(self):
+            size = self.size
+            for col in range(size):
+                column = [self.grid[row][col] for row in range(size) if self.grid[row][col] is not None]
+                missing = size - len(column)
+                new_tiles = [self._random_tile() for _ in range(missing)]
+                combined = new_tiles + column
+                for row in range(size):
+                    self.grid[row][col] = combined[row]
+
+    MATCH_TILE_SIZE = 120
+    MATCH_TILE_SPACING = 10
+    MATCH_TILE_STEP = MATCH_TILE_SIZE + MATCH_TILE_SPACING
+
+    def reset_match3_state():
+        global match_board, match_selected_cell, match_message, match_score, match_turns
+        global match_swap_cells, match_match_cells, match_pending_resolution, match_board_locked
+        match_board = MiniMatchBoard()
+        match_selected_cell = None
+        match_message = "Select two adjacent sigils to swap."
+        match_score = 0
+        match_turns = 10
+        match_swap_cells = []
+        match_match_cells = []
+        match_pending_resolution = False
+        match_board_locked = False
+
+    def handle_match_tile_click(row, col):
+        global match_board, match_turns, match_selected_cell, match_message, match_score
+        global match_swap_cells, match_match_cells, match_pending_resolution, match_board_locked
+        board = match_board
+        if not board or match_turns <= 0 or match_board_locked or match_pending_resolution:
+            return
+
+        pos = (row, col)
+
+        if match_selected_cell is None:
+            match_selected_cell = pos
+            match_message = "Choose a neighboring sigil to swap."
+            return
+
+        if match_selected_cell == pos:
+            match_selected_cell = None
+            match_message = "Selection cleared."
+            return
+
+        if not board.are_adjacent(match_selected_cell, pos):
+            match_selected_cell = None
+            match_message = "Sigils must share an edge."
+            return
+
+        match_swap_cells = [
+            {"start": match_selected_cell, "end": pos},
+            {"start": pos, "end": match_selected_cell},
+        ]
+        board.swap_cells(match_selected_cell, pos)
+        match_turns -= 1
+        matches = board.find_matches()
+        if matches:
+            match_match_cells = list(matches)
+            match_board_locked = True
+            match_pending_resolution = True
+            match_message = "Sigils resonating..."
+            renpy.restart_interaction()
+        else:
+            board.swap_cells(match_selected_cell, pos)
+            match_message = "No match formed."
+        match_selected_cell = None
+
+        if match_turns <= 0 and not match_pending_resolution:
+            if match_score >= match_target_score:
+                match_message = "Goal reached! Claim your spoils."
+            else:
+                match_message = "Out of turns. Final score: {}".format(match_score)
+
+    def match_goal_met():
+        return match_score >= match_target_score
+
+    def finalize_match_resolution():
+        global match_pending_resolution, match_board_locked, match_match_cells
+        global match_score, match_message, match_turns
+        if not match_pending_resolution or not match_board:
+            return
+
+        match_pending_resolution = False
+        cleared = match_board.resolve_all_matches()
+        if cleared:
+            match_score += cleared
+            match_message = "Matched {} sigils!".format(cleared)
+        else:
+            match_message = "Sigils stabilized."
+
+        match_match_cells = []
+        match_board_locked = False
+
+        if match_turns <= 0:
+            if match_score >= match_target_score:
+                match_message = "Goal reached! Claim your spoils."
+            else:
+                match_message = "Out of turns. Final score: {}".format(match_score)
+
+    def clear_match_swap_effect():
+        global match_swap_cells
+        match_swap_cells = []
+
+    def get_tile_transforms(row, col):
+        transforms = []
+        for swap in match_swap_cells:
+            if swap.get("end") == (row, col):
+                dx = (swap["start"][1] - swap["end"][1]) * MATCH_TILE_STEP
+                dy = (swap["start"][0] - swap["end"][0]) * MATCH_TILE_STEP
+                transforms.append(match_swap_anim(dx=dx, dy=dy))
+
+        if (row, col) in match_match_cells:
+            transforms.append(match_success_anim)
+
+        return tuple(transforms)
+
+style match_tile_button is default:
+    padding (16, 16)
+    background Solid("#2b1c3d")
+    hover_background Solid("#3e2556")
+    selected_background Solid("#5b3580")
+    xminimum 120
+    yminimum 120
+
+style match_tile_button_text is default:
+    size 48
+    color "#f3edff"
+
+transform match_swap_anim(dx=0, dy=0):
+    subpixel True
+    xoffset dx
+    yoffset dy
+    easeout 0.18 xoffset 0 yoffset 0
+
+transform match_success_anim:
+    subpixel True
+    linear 0.08 zoom 1.1
+    linear 0.22 zoom 0.75 alpha 0.0
+
+screen match_minigame():
+    modal True
+    tag menu
+    zorder 200
+
+    add Solid("#000000c8")
+
+    if match_pending_resolution:
+        timer 0.45 action Function(finalize_match_resolution)
+
+    if match_swap_cells:
+        timer 0.3 action Function(clear_match_swap_effect)
+
+    frame:
+        xalign 0.5
+        yalign 0.5
+        padding (32, 32)
+        background Solid("#120b1c")
+
+        vbox:
+            spacing 18
+            text "Sigil Array Trial" size 54
+            text "Score: [match_score] / [match_target_score]" size 36
+            text "Turns Remaining: [match_turns]" size 34
+            text match_message size 28
+
+            if match_board:
+                grid match_board.size match_board.size spacing MATCH_TILE_SPACING:
+                    for row in range(match_board.size):
+                        for col in range(match_board.size):
+                            $ tile = match_board.grid[row][col] or "?"
+                            $ is_selected = match_selected_cell == (row, col)
+                            $ tile_transforms = get_tile_transforms(row, col)
+                            textbutton tile:
+                                style_prefix "match_tile"
+                                selected is_selected
+                                at tile_transforms
+                                action Function(handle_match_tile_click, row, col)
+                                sensitive match_turns > 0 and not match_board_locked and not match_pending_resolution
+            else:
+                text "Preparing board..." size 32
+
+            hbox:
+                spacing 20
+                textbutton "Reset Board" action Function(reset_match3_state)
+                if match_turns <= 0:
+                    textbutton "Complete Trial" action Return(True)
+                else:
+                    textbutton "Concede" action Return(False)
+
+label match_minigame:
+    $ reset_match3_state()
+    $ result = renpy.call_screen("match_minigame")
+    return result
+
 transform splash_tag_reveal:
     alpha 0.0
     zoom 0.97
@@ -39,7 +303,7 @@ transform splash_logo_anchor:
 
 
 label splashscreen:
-    $ _preferences.fullscreen = True
+    # $ _preferences.fullscreen = True
     $ notifications_enabled = False
     scene black with Pause(0.25)
     pause 0.1
@@ -182,5 +446,18 @@ label start:
                 e "Otmar joins the roster to guard the envoy, giving the overlay another stat card without touching core scripts."
             else:
                 e "Otmar's already guarding the envoy, so no duplicate entry is created."
+
+    e "Before we adjourn, want to sanity check the rune-matrix that powers our candy-crush diversion?"
+
+    menu:
+        "Launch the sigil-matching mini-game":
+            call match_minigame
+            if match_goal_met():
+                e "Nicely done. The telemetry flags the board as stable once you clear enough sigils."
+            else:
+                e "Even without the victory threshold, the board proves the systems are humming."
+
+        "Skip the diversion for now":
+            e "Very well—we can revisit the sigil arrays whenever the pitch needs more sparkle."
 
     return
