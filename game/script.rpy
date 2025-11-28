@@ -10,6 +10,7 @@ default match_swap_cells = []
 default match_match_cells = []
 default match_pending_resolution = False
 default match_board_locked = False
+default match_autoplay = False
 
 init python:
     import random
@@ -78,6 +79,30 @@ init python:
                 for row in range(size):
                     self.grid[row][col] = combined[row]
 
+        def _score_swap(self, a, b):
+            self.swap_cells(a, b)
+            matches = self.find_matches()
+            score = len(matches)
+            self.swap_cells(a, b)
+            return score, matches
+
+        def best_scoring_swap(self):
+            best = None
+            best_score = 0
+            size = self.size
+            for row in range(size):
+                for col in range(size):
+                    for dr, dc in ((0, 1), (1, 0)):
+                        nr = row + dr
+                        nc = col + dc
+                        if nr >= size or nc >= size:
+                            continue
+                        score, _matches = self._score_swap((row, col), (nr, nc))
+                        if score > best_score:
+                            best_score = score
+                            best = ((row, col), (nr, nc), score)
+            return best
+
     MATCH_TILE_SIZE = 120
     MATCH_TILE_SPACING = 10
     MATCH_TILE_STEP = MATCH_TILE_SIZE + MATCH_TILE_SPACING
@@ -85,6 +110,7 @@ init python:
     def reset_match3_state():
         global match_board, match_selected_cell, match_message, match_score, match_turns
         global match_swap_cells, match_match_cells, match_pending_resolution, match_board_locked
+        global match_autoplay
         match_board = MiniMatchBoard()
         match_selected_cell = None
         match_message = "Select two adjacent sigils to swap."
@@ -94,6 +120,7 @@ init python:
         match_match_cells = []
         match_pending_resolution = False
         match_board_locked = False
+        match_autoplay = False
 
     def handle_match_tile_click(row, col):
         global match_board, match_turns, match_selected_cell, match_message, match_score
@@ -119,23 +146,41 @@ init python:
             match_message = "Sigils must share an edge."
             return
 
+        attempt_match_swap(match_selected_cell, pos, source="manual")
+
+    def match_goal_met():
+        return match_score >= match_target_score
+
+    def attempt_match_swap(first_cell, second_cell, source="manual"):
+        global match_swap_cells, match_match_cells, match_board_locked
+        global match_pending_resolution, match_selected_cell, match_message
+        global match_turns, match_board, match_score
+        match_selected_cell = None
+        if not match_board or match_turns <= 0:
+            return False
+
         match_swap_cells = [
-            {"start": match_selected_cell, "end": pos},
-            {"start": pos, "end": match_selected_cell},
+            {"start": first_cell, "end": second_cell},
+            {"start": second_cell, "end": first_cell},
         ]
-        board.swap_cells(match_selected_cell, pos)
+        match_board.swap_cells(first_cell, second_cell)
         match_turns -= 1
-        matches = board.find_matches()
+        matches = match_board.find_matches()
         if matches:
             match_match_cells = list(matches)
             match_board_locked = True
             match_pending_resolution = True
-            match_message = "Sigils resonating..."
+            if source == "auto":
+                match_message = "Autoplay weaving sigils..."
+            else:
+                match_message = "Sigils resonating..."
             renpy.restart_interaction()
         else:
-            board.swap_cells(match_selected_cell, pos)
-            match_message = "No match formed."
-        match_selected_cell = None
+            match_board.swap_cells(first_cell, second_cell)
+            if source == "auto":
+                match_message = "Autoplay swap fizzled."
+            else:
+                match_message = "No match formed."
 
         if match_turns <= 0 and not match_pending_resolution:
             if match_score >= match_target_score:
@@ -143,12 +188,50 @@ init python:
             else:
                 match_message = "Out of turns. Final score: {}".format(match_score)
 
-    def match_goal_met():
-        return match_score >= match_target_score
+        return bool(matches)
+
+    def stop_match_autoplay(message=None):
+        global match_autoplay, match_message
+        if match_autoplay:
+            match_autoplay = False
+            if message:
+                match_message = message
+            renpy.restart_interaction()
+
+    def toggle_match_autoplay():
+        global match_autoplay, match_message
+        if match_autoplay:
+            stop_match_autoplay("Autoplay halted.")
+        else:
+            match_autoplay = True
+            match_message = "Autoplay engaged."
+            autoplay_step()
+            renpy.restart_interaction()
+
+    def autoplay_step():
+        global match_autoplay, match_turns, match_board
+        global match_board_locked, match_pending_resolution
+        if not match_autoplay:
+            return
+
+        if not match_board or match_turns <= 0 or match_goal_met():
+            stop_match_autoplay("Autoplay complete.")
+            return
+
+        if match_board_locked or match_pending_resolution:
+            return
+
+        move = match_board.best_scoring_swap()
+        if not move:
+            stop_match_autoplay("Autoplay halted; no valid swaps.")
+            return
+
+        first_cell, second_cell, _score = move
+        attempt_match_swap(first_cell, second_cell, source="auto")
 
     def finalize_match_resolution():
         global match_pending_resolution, match_board_locked, match_match_cells
-        global match_score, match_message, match_turns
+        global match_score, match_message, match_turns, match_autoplay
         if not match_pending_resolution or not match_board:
             return
 
@@ -168,6 +251,9 @@ init python:
                 match_message = "Goal reached! Claim your spoils."
             else:
                 match_message = "Out of turns. Final score: {}".format(match_score)
+
+        if match_autoplay and (match_turns <= 0 or match_goal_met()):
+            stop_match_autoplay()
 
     def clear_match_swap_effect():
         global match_swap_cells
@@ -222,6 +308,9 @@ screen match_minigame():
     if match_swap_cells:
         timer 0.3 action Function(clear_match_swap_effect)
 
+    if match_autoplay:
+        timer 0.4 repeat True action Function(autoplay_step)
+
     frame:
         xalign 0.5
         yalign 0.5
@@ -254,6 +343,8 @@ screen match_minigame():
             hbox:
                 spacing 20
                 textbutton "Reset Board" action Function(reset_match3_state)
+                $ autoplay_label = "Autoplay: ON" if match_autoplay else "Autoplay: OFF"
+                textbutton autoplay_label action Function(toggle_match_autoplay)
                 if match_turns <= 0:
                     textbutton "Complete Trial" action Return(True)
                 else:
