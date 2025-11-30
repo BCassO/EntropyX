@@ -109,6 +109,86 @@ init python:
             return []
 
 
+    class ArcDisplayable(renpy.Displayable):
+        """Draw an arc using configurable angles, thickness, and segment resolution."""
+
+        def __init__(
+            self,
+            radius,
+            start_angle=-90,
+            end_angle=90,
+            color="#50e0ff",
+            thickness=8,
+            segments=120,
+            cap_style="round",
+            smooth=False,
+            smooth_factor=3.0,
+            **kwargs
+        ):
+            super(ArcDisplayable, self).__init__(**kwargs)
+            self.radius = max(1, int(radius))
+            self.start_angle = float(start_angle)
+            self.end_angle = float(end_angle)
+            self.color = color
+            self.thickness = max(1, int(thickness))
+            self.segments = max(4, int(segments))
+            self.cap_style = cap_style
+            self.smooth = bool(smooth)
+            self.smooth_factor = max(1.0, float(smooth_factor))
+
+        def render(self, width, height, st, at):
+            diameter = self.radius * 2
+            size = diameter + self.thickness * 2
+            rv = ren_render.Render(size, size)
+
+            scale = self.smooth_factor if self.smooth else 1.0
+            render_size = int(math.ceil(size * scale))
+            surface = ren_pgrender.surface((render_size, render_size), True)
+            surface = surface.convert_alpha()
+            surface.fill((0, 0, 0, 0))
+
+            start_radians = math.radians(self.start_angle)
+            end_radians = math.radians(self.end_angle)
+            sweep = end_radians - start_radians
+            if abs(sweep) < 1e-4:
+                return rv
+
+            effective_segments = int(self.segments * (self.smooth_factor if self.smooth else 1.0))
+            steps = max(4, int(abs(sweep) / (2 * math.pi) * effective_segments))
+            center = render_size / 2.0
+            half_thickness = max(1.0, (self.thickness * scale) / 2.0)
+            outer_radius = self.radius * scale + half_thickness
+            inner_radius = max(0.0, self.radius * scale - half_thickness)
+
+            outer_points = []
+            inner_points = []
+            mid_points = []
+            for i in range(steps + 1):
+                t = start_radians + sweep * (i / float(steps))
+                cos_t = math.cos(t)
+                sin_t = math.sin(t)
+                outer_points.append((center + cos_t * outer_radius, center + sin_t * outer_radius))
+                inner_points.append((center + cos_t * inner_radius, center + sin_t * inner_radius))
+                mid_points.append((center + cos_t * (self.radius * scale), center + sin_t * (self.radius * scale)))
+
+            polygon_points = outer_points + list(reversed(inner_points))
+            pygame.draw.polygon(surface, _color_to_rgba_tuple(self.color), polygon_points)
+
+            if self.cap_style == "round" and inner_radius > 0:
+                cap_radius = int(round(half_thickness))
+                pygame.draw.circle(surface, _color_to_rgba_tuple(self.color), mid_points[0], cap_radius)
+                pygame.draw.circle(surface, _color_to_rgba_tuple(self.color), mid_points[-1], cap_radius)
+
+            if scale != 1.0:
+                surface = pygame.transform.smoothscale(surface, (size, size))
+
+            rv.blit(surface, (0, 0))
+            return rv
+
+        def visit(self):
+            return []
+
+
 screen circle_demo_screen(fill_color="#5ecbff", border_color="#0f1925"):
     modal True
     add Solid("#000000aa")
@@ -123,6 +203,11 @@ screen circle_demo_screen(fill_color="#5ecbff", border_color="#0f1925"):
                 xysize (320, 320)
                 add DashedCircleDisplayable(radius=140, dash_count=56, dash_ratio=0.55, thickness=6, color="#2ac4ff", rotation=90) align (0.5, 0.5)
                 add CircleDisplayable(radius=130, fill_color=None, border_color=border_color, border_thickness=12) align (0.5, 0.5)
+            hbox:
+                spacing 24
+                xalign 0.5
+                add ArcDisplayable(radius=80, start_angle=-120, end_angle=40, thickness=14, color="#5cffc9", segments=160, smooth=True) xalign 0.5
+                add ArcDisplayable(radius=80, start_angle=0, end_angle=360, thickness=5, color="#ff7ea8", segments=200, smooth=True) xalign 0.5
             text "Click or press \"Enter\" to dismiss." size 24
 
     key "dismiss" action Return(None)

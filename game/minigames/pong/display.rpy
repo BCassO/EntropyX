@@ -50,7 +50,7 @@ init python:
         )
 
     class PongMidfieldOverlay(renpy.Displayable):
-        def __init__(self, width, height, circle_ratio=0.30, **kwargs):
+        def __init__(self, width, height, circle_ratio=0.26, **kwargs):
             super(PongMidfieldOverlay, self).__init__(**kwargs)
             self.width = int(width)
             self.height = int(height)
@@ -138,7 +138,7 @@ init python:
         pong_right_velocity = 0.0
         reset_pong_ball(serve_to="right")
         if pong_mode == "player_vs_ai":
-            pong_message = "W/S to move. Arrow keys nudge the AI paddle if you want."
+            pong_message = "W/S to move. The AI controls the right paddle."
         else:
             pong_message = "W/S moves left paddle. Arrows move right paddle."
 
@@ -215,13 +215,12 @@ init python:
         if pong_left_velocity:
             move_paddle("left", pong_left_velocity, dt)
 
-        right_desired = 0
-        if pressed[pygame.K_UP]:
-            right_desired -= 1
-        if pressed[pygame.K_DOWN]:
-            right_desired += 1
-
         if pong_mode == "player_vs_player":
+            right_desired = 0
+            if pressed[pygame.K_UP]:
+                right_desired -= 1
+            if pressed[pygame.K_DOWN]:
+                right_desired += 1
             pong_right_velocity = _approach_velocity(pong_right_velocity, right_desired, PONG_PADDLE_ACCEL, dt)
             if pong_right_velocity:
                 move_paddle("right", pong_right_velocity, dt)
@@ -229,14 +228,8 @@ init python:
                 pong_right_velocity = 0.0
             pong_right_manual_override = False
         else:
-            if right_desired:
-                pong_right_velocity = _approach_velocity(pong_right_velocity, right_desired, PONG_PADDLE_ACCEL, dt)
-                if pong_right_velocity:
-                    move_paddle("right", pong_right_velocity, dt)
-                pong_right_manual_override = True
-            else:
-                pong_right_velocity = _approach_velocity(pong_right_velocity, 0, PONG_PADDLE_ACCEL, dt)
-                pong_right_manual_override = False
+            pong_right_velocity = _approach_velocity(pong_right_velocity, 0, PONG_PADDLE_ACCEL, dt)
+            pong_right_manual_override = False
 
     def pong_ai_step():
         global pong_right_velocity, pong_mode
@@ -344,7 +337,7 @@ style pong_status:
     color "#c3d2ef"
     xalign 0.5
 
-screen pong_midfield_overlay(field_w, field_h, circle_ratio=0.30):
+screen pong_midfield_overlay(field_w, field_h, circle_ratio=0.26):
     # Uses the custom displayable so the dashed line + rings render on every renderer layer.
     add PongMidfieldOverlay(field_w, field_h, circle_ratio=circle_ratio) xpos 0 ypos 0
 
@@ -411,7 +404,7 @@ screen pong_minigame():
                 for dash_y in range(-dash_height, field_h + dash_height, dash_height + dash_gap):
                     add Solid(dash_color) xpos field_w / 2 - 2 ypos dash_y xysize (4, dash_height)
 
-                $ circle_ratio = 0.30
+                $ circle_ratio = 0.26
                 use pong_midfield_overlay(field_w=field_w, field_h=field_h, circle_ratio=circle_ratio)
 
                 add Solid("#32afff") xysize (paddle_w, paddle_h) xpos paddle_left_x ypos paddle_left_top
