@@ -1,3 +1,4 @@
+# Copyright (c) 2025 Knox Emberlyn. Licensed under the MIT License.
 default ttt_board = [None] * 9
 default ttt_current_player = "X"
 default ttt_game_over = False
@@ -7,7 +8,6 @@ default ttt_human_symbol = "X"
 default ttt_ai_symbol = "O"
 default ttt_last_winner = None
 default ttt_winning_cells = []
-default ttt_winning_line = None
 
 default ttt_ai_delay = 0.45
 
@@ -16,8 +16,6 @@ init python:
     TTT_TILE_SIZE = 140
     TTT_TILE_SPACING = 14
     TTT_BOARD_SIZE = TTT_TILE_SIZE * 3 + TTT_TILE_SPACING * 2
-    TTT_LINE_THICKNESS = 12
-    TTT_DIAG_SCALE = 1.45
 
     def ttt_winning_lines():
         return [
@@ -33,14 +31,13 @@ init python:
 
     def reset_ttt_game():
         global ttt_board, ttt_current_player, ttt_game_over, ttt_message
-        global ttt_last_winner, ttt_winning_cells, ttt_winning_line
+        global ttt_last_winner, ttt_winning_cells
         ttt_board = [None] * 9
         ttt_current_player = "X"
         ttt_game_over = False
         ttt_message = "Place a sigil to begin."
         ttt_last_winner = None
         ttt_winning_cells = []
-        ttt_winning_line = None
 
     def set_ttt_mode(vs_ai):
         global ttt_vs_ai, ttt_message
@@ -54,32 +51,20 @@ init python:
     def ttt_available_moves():
         return [i for i, cell in enumerate(ttt_board) if cell is None]
 
-    def ttt_line_descriptor(line_index):
-        if line_index <= 2:
-            return ("row", line_index)
-        if line_index <= 5:
-            return ("col", line_index - 3)
-        if line_index == 6:
-            return ("diag", "main")
-        return ("diag", "anti")
-
     def ttt_check_game_state(record=False):
-        global ttt_winning_cells, ttt_winning_line
+        global ttt_winning_cells
         for idx, line in enumerate(ttt_winning_lines()):
             a, b, c = line
             if ttt_board[a] and ttt_board[a] == ttt_board[b] == ttt_board[c]:
                 if record:
                     ttt_winning_cells = list(line)
-                    ttt_winning_line = ttt_line_descriptor(idx)
                 return ttt_board[a]
         if all(cell is not None for cell in ttt_board):
             if record:
                 ttt_winning_cells = []
-                ttt_winning_line = None
             return "draw"
         if record:
             ttt_winning_cells = []
-            ttt_winning_line = None
         return None
 
     def ttt_finish_game(result):
@@ -143,24 +128,6 @@ init python:
         if not ttt_game_over:
             ttt_message = "Your turn."
 
-    def ttt_compute_line_geometry(line_info):
-        if not line_info:
-            return None
-        kind, value = line_info
-        half_tile = TTT_TILE_SIZE / 2.0
-        step = TTT_TILE_SIZE + TTT_TILE_SPACING
-        board_half = TTT_BOARD_SIZE / 2.0
-        if kind == "row":
-            y = value * step + half_tile
-            return dict(xpos=board_half, ypos=y, xsize=TTT_BOARD_SIZE, ysize=TTT_LINE_THICKNESS, rotate=0)
-        if kind == "col":
-            x = value * step + half_tile
-            return dict(xpos=x, ypos=board_half, xsize=TTT_LINE_THICKNESS, ysize=TTT_BOARD_SIZE, rotate=0)
-        if kind == "diag":
-            length = TTT_BOARD_SIZE * TTT_DIAG_SCALE
-            angle = 45 if value == "main" else -45
-            return dict(xpos=board_half, ypos=board_half, xsize=length, ysize=TTT_LINE_THICKNESS, rotate=angle)
-        return None
 
 style ttt_tile_button is default:
     padding (12, 12)
@@ -186,13 +153,6 @@ transform ttt_win_flash:
     linear 0.25 alpha 0.6
     repeat
 
-transform ttt_line_flash:
-    on show:
-        alpha 0.0
-    linear 0.15 alpha 0.85
-    linear 0.2 alpha 0.4
-    repeat
-
 screen tic_tac_toe_minigame():
     modal True
     tag menu
@@ -215,6 +175,7 @@ screen tic_tac_toe_minigame():
             text ttt_message size 30
 
             fixed:
+                clipping True
                 xsize TTT_BOARD_SIZE
                 ysize TTT_BOARD_SIZE
 
@@ -239,10 +200,6 @@ screen tic_tac_toe_minigame():
                             if index in ttt_winning_cells:
                                 at ttt_win_flash
 
-                if ttt_winning_line:
-                    $ geom = ttt_compute_line_geometry(ttt_winning_line)
-                    if geom:
-                        add Transform(Solid("#f04747"), xsize=geom["xsize"], ysize=geom["ysize"], xpos=geom["xpos"], ypos=geom["ypos"], xanchor=0.5, yanchor=0.5, rotate=geom["rotate"]) at ttt_line_flash
 
             hbox:
                 spacing 20
