@@ -152,6 +152,9 @@ define config.save_directory = "EntropyX-1763931906"
 
 define config.window_icon = "gui/window_icon.png"
 
+init -1 python:
+    config.keymap["screenshot"] = ["alt_K_s"]
+
 
 ## Build configuration #########################################################
 ##
