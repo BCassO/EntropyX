@@ -76,7 +76,7 @@ label start:
 
     # stop music fadeout 1.0
     # $ quick_menu = True
-    $ toggle_quest_tracker_visibility()
+    # $ toggle_quest_tracker_visibility()
     $ notifications_enabled = True
     play music "audio/a-robust-crew.mp3" fadein 1.5
 
@@ -111,6 +111,9 @@ label start:
             $ game_state.update_character_stat("Sir Galen", "corruption", 2)
             $ game_state.update_quest_status("Seal the Barrow Gate", "in_progress")
             e "The gate groans but holds, and you can watch its status move to in-progress on the tracker."
+
+        "Start the mini-game showcase":
+            jump demo_minigames
 
     e "Now let's highlight some of the new faces stored inside the data model."
 
@@ -186,7 +189,7 @@ label start:
 
     e "Before we adjourn, want to sanity check the rune-matrix that powers our candy-crush diversion, the serpent run in the training yard, the sigil grid trials, or the arcane pong table?"
 
-    menu:
+    menu demo_minigames:
         "Launch the sigil-matching mini-game":
             call match_minigame
             if match_goal_met():
