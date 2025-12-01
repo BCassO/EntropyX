@@ -218,16 +218,20 @@ init python early:
             self.friction = 4.0
             self.velocity = Vec2(0.0, 0.0)
             self.cooldown = 0.18
+            self.base_cooldown = self.cooldown
             self.cooldown_timer = 0.0
             self.invulnerable_timer = 0.0
             self.max_health = 100
             self.health = self.max_health
             self.alive = True
+            self.damage_bonus = 1.0
+            self.ship_name = "Vanguard"
 
         def reset(self):
             self.position.set(self.bounds[0] / 2, self.bounds[1] - 80)
             self.velocity.set(0.0, 0.0)
             self.cooldown_timer = 0.0
+            self.cooldown = self.base_cooldown
             self.invulnerable_timer = 0.0
             self.health = self.max_health
             self.alive = True
@@ -271,11 +275,13 @@ init python early:
                 dir_norm = dir_vec.normalized()
                 spawn = self.position + dir_norm * (self.radius + 10)
                 sprite = sprite_provider()
+                base_damage = 2 if double_shot else 1
+                damage = max(1, int(round(base_damage * self.damage_bonus)))
                 projectile = Projectile(
                     position=(spawn.x, spawn.y),
                     velocity=(dir_norm.x * 640, dir_norm.y * 640),
                     sprite=sprite,
-                    damage=2 if double_shot else 1,
+                    damage=damage,
                     friendly=True,
                 )
                 projectiles.append(projectile)
@@ -356,8 +362,12 @@ init python early:
             self.shake_timer = 0.0
             self.shake_duration = 0.001
             self.shake_strength = 0.0
+            self.ship_profile = None
+            self.wave_limit = None
+            self.mission_complete = False
 
         def reset(self):
+            limit = self.wave_limit
             self.player.reset()
             self.input_direction.set(0, 0)
             self.pointer.set(self.width / 2, self.height / 2)
@@ -387,6 +397,10 @@ init python early:
             self.shake_timer = 0.0
             self.shake_duration = 0.001
             self.shake_strength = 0.0
+            self.mission_complete = False
+            if self.ship_profile:
+                self._apply_ship_profile()
+            self.set_wave_limit(limit)
 
         def update(self, dt):
             dt = _clamp(dt, 0.0, 0.05)
@@ -401,12 +415,14 @@ init python early:
             self.double_shot_timer = max(0.0, self.double_shot_timer - dt)
             self.rapid_fire_timer = max(0.0, self.rapid_fire_timer - dt)
             self.shield_timer = max(0.0, self.shield_timer - dt)
+            base_cd = getattr(self.player, "base_cooldown", self.player.cooldown)
             if self.rapid_fire_timer > 0:
-                self.player.cooldown = 0.09
+                self.player.cooldown = max(0.05, base_cd * 0.5)
             else:
-                self.player.cooldown = 0.18
+                self.player.cooldown = base_cd
             if not self.player.alive and not self.game_over:
                 self.game_over = True
+                self._halt_player_motion()
 
             firing = self.keyboard_fire or self.mouse_fire
             if not self.game_over and firing and self.player.can_fire():
@@ -459,8 +475,12 @@ init python early:
                 "rapid_fire": self.rapid_fire_timer,
                 "shield": self.shield_timer,
                 "game_over": self.game_over,
+                "mission_complete": self.mission_complete,
                 "wave_banner": self.wave_banner_timer,
                 "boss_active": self.boss_active,
+                "ship_name": self.player.ship_name,
+                "ship_role": (self.ship_profile or {}).get("role", ""),
+                "wave_limit": self.wave_limit,
             }
 
         def result(self, aborted=False):
@@ -470,11 +490,15 @@ init python early:
                     "aborted": aborted,
                     "elapsed": round(self.elapsed, 2),
                     "health": self.player.health,
+                    "mission_complete": self.mission_complete,
                 }
             )
             return data
 
         def set_direction(self, dx, dy):
+            if self.game_over:
+                self._halt_player_motion()
+                return
             direction = Vec2(dx, dy)
             if direction.length_squared() > 1:
                 direction = direction.normalized()
@@ -625,6 +649,69 @@ init python early:
             self.wave_banner_timer = 2.2
             self.wave_cooldown = 1.5
 
+        def _complete_mission(self):
+            if self.mission_complete:
+                return
+            self.mission_complete = True
+            self.game_over = True
+            self._halt_player_motion()
+            self.wave_banner_timer = 0.0
+            self.boss_active = False
+            self.enemy_projectiles[:] = []
+            self.player_projectiles[:] = []
+            self.boosters[:] = []
+
+        def _halt_player_motion(self):
+            self.input_direction.set(0.0, 0.0)
+            if hasattr(self.player, "velocity"):
+                self.player.velocity.set(0.0, 0.0)
+
+        def set_ship_profile(self, profile):
+            if not profile:
+                return
+            self.ship_profile = dict(profile)
+            self._apply_ship_profile()
+
+        def set_wave_limit(self, wave_limit):
+            if wave_limit is None:
+                self.wave_limit = None
+            else:
+                try:
+                    wave_limit = int(wave_limit)
+                except (TypeError, ValueError):
+                    self.wave_limit = None
+                else:
+                    self.wave_limit = max(1, wave_limit)
+            if self.wave_limit is None:
+                self.mission_complete = False
+
+        def _apply_ship_profile(self):
+            if not self.ship_profile:
+                return
+            profile = self.ship_profile
+            sprite_rel = profile.get("sprite")
+            sprite = profile.get("_sprite_surface")
+            if sprite_rel:
+                if sprite is None:
+                    sprite = self._load_image(sprite_rel, scale=1.0)
+                    if sprite is not None:
+                        sprite = self._scale_ship_sprite(sprite, profile)
+                        profile["_sprite_surface"] = sprite
+                if sprite is not None:
+                    self.player.sprite = sprite
+                    self.player.radius = max(18.0, sprite.get_width() * 0.35)
+            self.player.speed = profile.get("speed", self.player.speed)
+            self.player.acceleration = profile.get("acceleration", self.player.acceleration)
+            self.player.friction = profile.get("friction", self.player.friction)
+            max_health = profile.get("health", self.player.max_health)
+            self.player.max_health = max_health
+            self.player.health = self.player.max_health
+            base_cd = profile.get("cooldown", self.player.base_cooldown)
+            self.player.base_cooldown = base_cd
+            self.player.cooldown = base_cd
+            self.player.damage_bonus = profile.get("damage", self.player.damage_bonus)
+            self.player.ship_name = profile.get("name", self.player.ship_name)
+
         def _update_powerup_timer(self, dt):
             if self.game_over:
                 return
@@ -676,9 +763,16 @@ init python early:
             self.combo_timer = 0.0
             if died:
                 self.game_over = True
+                self._halt_player_motion()
 
         def _handle_waves(self, dt):
-            if self.game_over or self.boss_active:
+            if self.game_over:
+                return
+            if self.wave_limit and self.wave_index >= self.wave_limit:
+                if not self.enemies and not self.boss_active:
+                    self._complete_mission()
+                return
+            if self.boss_active:
                 return
             if self.enemies:
                 return
@@ -1001,6 +1095,31 @@ init python early:
                 height = max(1, int(image.get_height() * scale))
                 image = pygame.transform.smoothscale(image, (width, height))
             return image
+
+        def _scale_ship_sprite(self, sprite, profile):
+            scale_hint = float(profile.get("scale", 1.0))
+            max_width = profile.get("max_runtime_width")
+            result = sprite
+            if scale_hint != 1.0:
+                result = self._scale_surface(result, scale_hint)
+            if max_width:
+                result = self._scale_surface_to_width(result, max_width)
+            return result
+
+        def _scale_surface(self, surface, factor):
+            if factor == 1.0 or factor <= 0:
+                return surface
+            width = max(1, int(surface.get_width() * factor))
+            height = max(1, int(surface.get_height() * factor))
+            if width == surface.get_width() and height == surface.get_height():
+                return surface
+            return pygame.transform.smoothscale(surface, (width, height))
+
+        def _scale_surface_to_width(self, surface, max_width):
+            if not max_width or surface.get_width() <= max_width:
+                return surface
+            factor = float(max_width) / float(surface.get_width())
+            return self._scale_surface(surface, factor)
 
         def _placeholder_sprite(self, color):
             surface = pygame.Surface((48, 32), pygame.SRCALPHA)
