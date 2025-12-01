@@ -213,6 +213,11 @@ label start:
             call pong_minigame
             e "Impressive volleys. The rune-ball tracking shows off our physics layer beautifully."
 
+        "Initiate Space Rebellion mini-game":
+            pause 1.0
+            call space_rebellion_minigame
+            e "The space combat demo highlights real-time input handling and dynamic asset loading."
+
         "Skip the diversions for now":
             e "Very well—we can revisit the sigil arrays, serpent drills, grid trials, and pong table whenever the pitch needs more sparkle."
 
