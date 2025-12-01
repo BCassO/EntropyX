@@ -282,15 +282,17 @@ screen space_rebellion_ship_select():
         xalign 0.5
         yalign 0.5
         xmaximum 1180
-        ymaximum 720
+        ymaximum 860
         padding (28, 28)
         background Solid("#050912f0")
 
-        vbox:
-            spacing 16
+        fixed:
+            xfill True
+            yfill True
+
             viewport:
                 xfill True
-                ymaximum 600
+                ymaximum 760
                 scrollbars "vertical"
                 mousewheel True
                 draggable True
@@ -352,20 +354,7 @@ screen space_rebellion_ship_select():
                                                         for trait in selected_ship.get("traits", []):
                                                             text u"• {0}".format(trait) size 20 color "#f5fbff"
                                 text "Use the arrow keys or scroll to browse. Pick a mission length below, then press Enter to deploy." size 20 color "#8aa3c7"
-                            frame:
-                                background Solid("#0c1628")
-                                padding (24, 24)
-                                xmaximum 420
-                                yminimum 320
-                                vbox:
-                                    spacing 10
-                                    xalign 0.5
-                                    $ preview = selected_ship["preview"]
-                                    $ preview_zoom = selected_ship.get("_preview_zoom", 1.0)
-                                    add Transform(Image(preview), zoom=preview_zoom, anchor=(0.5, 0.5)) xalign 0.5 yalign 0.5
-                                    text selected_ship["name"] size 24 color selected_ship.get("color", "#ffffff") xalign 0.5
-                                    text selected_ship["role"] size 20 color "#cdd5e5" xalign 0.5
-                                    text selected_ship["difficulty"] size 22 color "#8bf3ff" xalign 0.5
+                            null width 0
 
                     $ wave_limit_label = "Endless" if wave_limit is None else "{} Waves".format(wave_limit)
                     $ wave_limit_value = wave_limit if wave_limit is not None else _WAVE_LIMIT_MIN
@@ -398,7 +387,7 @@ screen space_rebellion_ship_select():
                         padding (18, 18)
                         viewport:
                             xsize 1120
-                            ysize 300
+                            ysize 460
                             scrollbars "vertical"
                             draggable True
                             mousewheel True
@@ -429,9 +418,30 @@ screen space_rebellion_ship_select():
                                         add Transform(Image(ship["preview"]), zoom=roster_zoom) xalign 0.5
                                         text "Speed {0}".format(ship["speed"]) size 16 color "#8aa3c7"
 
+            if selected_ship:
+                frame:
+                    anchor (1.0, 0.0)
+                    xpos 0.97
+                    ypos 0.02
+                    xmaximum 360
+                    background Solid("#040b16e6")
+                    padding (16, 16)
+                    at Transform(alpha=0.95)
+                    vbox:
+                        spacing 10
+                        text "Ship Preview" size 20 color "#8bf3ff" xalign 0.5
+                        $ preview = selected_ship["preview"]
+                        $ preview_zoom = selected_ship.get("_preview_zoom", 1.0)
+                        add Transform(Image(preview), zoom=preview_zoom, anchor=(0.5, 0.5)) xalign 0.5 yalign 0.5
+                        text selected_ship["name"] size 24 color selected_ship.get("color", "#ffffff") xalign 0.5
+                        text selected_ship["role"] size 20 color "#cdd5e5" xalign 0.5
+                        text selected_ship["difficulty"] size 22 color "#8bf3ff" xalign 0.5
+
             hbox:
                 spacing 20
-                xalign 1.0
+                xalign 0.5
+                yalign 1.0
+                yoffset 20
                 textbutton "Cancel" action Return(None)
                 if deploy_action:
                     textbutton "Deploy" action deploy_action
@@ -466,6 +476,9 @@ screen space_rebellion_minigame(displayable=None):
     key "dismiss" action NullAction()
     key "K_RETURN" action NullAction()
     key "K_SPACE" action NullAction()
+    # Uncomment the following lines to not let Ren'Py steals WASD/arrow keys during minigame.
+    for _intercept_key in ("K_a", "K_d", "K_w", "K_s", "K_LEFT", "K_RIGHT", "K_UP", "K_DOWN"):
+        key _intercept_key action NullAction()
 
     add Solid("#00050cdd")
 
